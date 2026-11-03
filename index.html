@@ -1,0 +1,529 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link href="./ecl.css" rel="stylesheet" type="text/css">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>オンライン見積書作成フォーム（Smarty）</title>
+<link href="src/prettify.css" type="text/css" rel="stylesheet" />
+<script type="text/javascript" src="src/prettify.js"></script>
+</head>
+<body onload="prettyPrint();">
+<div id="contents">
+	<div id="header">
+		<h1>オンライン見積書作成フォーム（Smarty）</h1>
+		<h4>※初めに、「<span class="red2">はじめにお読みください.txt</span>」をお読みください</h4>
+	</div><!-- header ここまで -->
+	<div id="inner">
+		<div id="side">
+			<h2>INDEX</h2>
+			<ul>
+<li><a href="#step01">STEP:01 はじめに</a></li>
+<li><a href="#step02">STEP:02 設置方法</a></li>
+<li><a href="#step03">STEP:03 カスタマイズ</a></li>
+
+			</ul>
+		</div><!-- side ここまで -->
+		<div id="main">
+			<div class="step" id="step01">
+				<h3>STEP:01 はじめに</h3>
+					<br />
+				
+					<h4>▼Smartyを使用したオンライン見積書作成フォームを作成します</h4>
+					<p>
+					<img src="image/1.jpg" style="width:430;" />
+					</p>
+					<p><span class="red2">Smarty</span>の機能（プラグイン）を使用しプルダウンを生成します
+					</p>
+					<br />
+					<p>商品データ（名称、金額等）を配列で指定する事により、自動で入力用のフォームが生成されます<br />
+					生成されたフォームで各商品の個数を選択し会社名を入力する事で<br />次ページで税込み合計金額まで含まれた見積書が生成されます
+					</p>
+					<br />
+					<p>各商品別に選択可能な個数の最大値、商品別の単位の設定が可能です
+					</p>
+					<br />
+					<p><span class="red2">会社名が未入力、もしくは商品の個数が1つも選択されていない場合にエラーとなります</span></p>
+			</div><!-- step01 ここまで --> 
+			<br />
+			<div class="step" id="step02">
+				<h3>STEP:02 設置方法</h3>
+					<br />
+					<h4>▼必要なファイルの作成</h4>
+					<p>動作させる為に必要な</p>
+					<ul style="margin-top: 3px;margin-bottom: 5px;">
+						<li class="li">Smarty、見積書作成用プログラム「<span class="blue">document.php</span>」</li>
+						<li class="li">Smarty雛形用ディレクトリ「<span class="blue">templates</span>」、「<span class="blue">templates_c</span>」</li>
+						<li class="li">雛形用ディレクトリ<span class="blue">templates</span>以下に入力フォーム用HTML「<span class="blue">form.html</span>」</li>
+						<li class="li">雛形用ディレクトリ<span class="blue">templates</span>以下に見積書用HTML「<span class="blue">document.html</span>」</li>
+					</ul>
+					<p>1つのPHP、2つのディレクトリ、2つのHTMLを用意します</p>
+					<br />
+					<p><span class="red2">本マニュアルのsampleディレクトリ以下にファイルとフォルダが用意されています</span></p>
+					<br />
+					<p><span class="red2">※Smartyが事前にインストールされている必要があります</span></p>
+					<p><span class="red2">※<span class="blue">templates_c</span>には書き込み権限が必要です</span></p>
+
+
+<br />
+					<h4>▼見積書作成用プログラムの作成「<span class="blue">document.php</span>」</h4>
+<pre class="code prettyprint" >
+<?php
+//  Smartyの読み込み
+  require_once('Smarty.class.php');
+
+//  税率を指定
+  define("TAX",0.05);
+
+//  Smartyのインスタンス化
+  $smarty = new Smarty();
+
+//  雛形にてnumber_formatを使用する為、定義
+  $smarty->register_modifier("number_format","number_format");
+
+//  雛形等のディレクトリを指定
+  $smarty->template_dir = './templates/';
+  $smarty->compile_dir = './templates_c/';
+
+//  商品データの取得
+  $items = getItems();
+
+//  商品別のプルダウンを作成
+  $options = array();
+  foreach($items as $key => $value){
+  //  0からmaxで指定された数までの選択枝を作成
+    for($i=0;$i<=$value["max"];$i++){
+      $options[$key][$i] = $i?$i.$value["unit"]:"希望注文数を選択してください";
+    }
+  }
+
+//  見積もりボタンが押された場合の処理
+  $_post = $_POST;
+  if($_post["next"] == 1){
+    $item_count = array();
+    if(is_array($_post["item_count"])){
+    //  入力チェック（不正、想定外のデータを除外）
+      foreach($_post["item_count"] as $id => $count){
+        if(isset($items[$id]) && preg_match("/^[0-9]+$/",$count) && $count > 0 && $count <= $items[$id]["max"]){
+          $item_count[$id] = $count;
+        }
+      }
+    }
+  //  会社名の入力チェックのフラグ
+    $company = false;
+    if(trim($_post["company"]) != ""){
+    //  会社名をassign
+      $smarty->assign("company",htmlspecialchars(trim($_post["company"])));
+      $company = true;
+    }
+
+  //  見積書用データ計算
+    if($company && count($item_count)){
+      $orderItems = array();
+      $all = 0;
+      foreach($item_count as $id => $count){
+      //  商品データに注文数と商品別合計金額の追加
+        $items[$id]["count"] = $count;
+        $items[$id]["total"] = $count*$items[$id]["price"];
+        $all += $items[$id]["total"];
+        $orderItems[$id] = $items[$id];
+      }
+
+    //  税抜きの小計金額
+      $smarty->assign("ALL",$all);
+      $tax = floor($all*TAX);
+    //  税
+      $smarty->assign("TAX",$tax);
+
+    //  税込みの合計金額
+      $smarty->assign("ALL_TAX",$all+$tax);
+
+    //  選択された商品一覧
+      $smarty->assign("ORDER_ITEMS",$orderItems);
+
+    //  見積書ページ表示
+      $smarty->display("document.html");
+      exit();
+    }else{
+    //  会社名が未入力、もしくは商品が選択されていなかった場合の処理
+      $smarty->assign("item_count",$item_count);
+      $smarty->assign("ERR",1);
+    }
+  }
+
+//  商品データのassign
+  $smarty->assign("ITEMS",$items);
+//  個数選択用のプルダウンのassign
+  $smarty->assign("ITEMS_OPTIONS",$options);
+
+//  フォームの表示
+  $smarty->display("form.html");
+
+//  商品データの取得
+  function getItems(){
+    $items = array(
+          //  商品ごとに下記のような配列を作成します
+            array(
+                "name" => "○○サーバー",  //  商品名
+                "price" => 247000,     //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" => 10,           //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" => "台",        //  商品の単位
+                "note" => "RAID対応、2Uサーバ",  //  備考
+            ),
+          //  2つ目の商品
+            array(
+                "name" => "増設用メモリ4G",  //  商品名
+                "price" => 20000,         //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" => 10,              //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" => "個",           //  商品の単位
+                "note" => "○○サーバー専用",  //  備考
+            ),
+          //  3つ目の商品
+            array(
+                "name" => "17インチ・ディスプレイ",  //  商品名
+                "price" => 10800,                //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" => 30,                     //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" => "台",                  //  商品の単位
+                "note" => "",                    //  備考
+            ),
+          //  4つ目の商品
+            array(
+                "name" => "キーボード",             //  商品名
+                "price" => 1980,                  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" => 50,                      //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" => "個",                   //  商品の単位
+                "note" => "マウスは付属していません",  //  備考
+            ),
+  //        配列データを増やすことにより商品を追加可能です
+  //          array(
+  //              "name" => "追加商品",  //  商品名
+  //              "price" => 1000,     //  単価(税抜) 1以上の半角数字で指定する必要があります
+  //              "max" => 10,         //  注文可能最大数 1以上の半角数字で指定する必要があります
+  //              "unit" => "個",      //  商品の単位
+  //              "note" => "サンプルが付属",  //  備考
+  //          ),
+        );
+    $return = array();
+    $i = 1;
+    foreach($items as $key => $value){
+      $value["id"] = $i;
+      $value["tax"] = floor($value["price"]*TAX);
+      $value["price_tax"] = $value["price"]+$value["tax"];
+      $return[$i] = $value;
+      $i++;
+    }
+    return $return;
+  }
+</pre>
+					<h4>▼入力フォーム用のHTML作成「<span class="blue">form.html</span>」</h4>
+<pre class="code prettyprint" >
+&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"&gt;
+&lt;html&gt;
+&lt;head&gt; 
+&lt;meta http-equiv="Content-Type" content="text/html; charset=utf-8"&gt;
+&lt;title&gt;オンライン見積書&lt;/title&gt;
+&lt;!--{literal}--&gt;
+&lt;style type="text/css"&gt;
+&lt;!--
+  table{
+    border: solid 1px #999999;
+    border-collapse: collapse;
+  }
+  th {
+    padding: 5px;
+    background: #F5F5F5;
+    border: solid 1px #999999;
+    text-align: center;
+  }
+  td {
+    border: solid 1px #999999;
+    padding: 5px;
+    text-align: left;
+  }
+
+--&gt;
+&lt;/style&gt;
+&lt;!--{/literal}--&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;!-- エラー表示部 START --&gt;
+    {if $ERR}
+      &lt;p style="color:red;"&gt;未入力があります&lt;/p&gt;
+    {/if}
+  &lt;!-- エラー表示部 END --&gt;
+    &lt;h1&gt;オンライン見積書作成&lt;/h1&gt;
+  &lt;!-- 入力フォーム表示部 START --&gt;
+  &lt;table&gt;
+    &lt;form action="./document.php" method="post"&gt;
+    &lt;tr&gt;
+      &lt;th colspan="3"&gt;
+        御社名&lt;font size="2"&gt;(見積書に記載されます)&lt;/font&gt;
+      &lt;/th&gt;
+      &lt;td colspan="3"&gt;
+        &lt;input type="text" name="company" value="{$company}" size="60" /&gt;
+      &lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;商品名&lt;/th&gt;
+      &lt;th&gt;単価(税抜き)&lt;/th&gt;
+      &lt;th&gt;単価(税込み)&lt;/th&gt;
+      &lt;th&gt;在庫&lt;/th&gt;
+      &lt;th&gt;注文数&lt;/th&gt;
+      &lt;th&gt;備考&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;!-- 商品データ表示部 START --&gt;
+  {foreach from=$ITEMS key=item_id item=value}
+    &lt;tr&gt;
+      &lt;td&gt;{$value.name}&lt;/td&gt;
+      &lt;td style="text-align:right;"&gt;{$value.price|number_format}円&nbsp;&lt;/td&gt;
+      &lt;td style="text-align:right;"&gt;{$value.price_tax|number_format}円&nbsp;&lt;/td&gt;
+      &lt;td&gt;{$value.max|number_format}{$value.unit}&nbsp;&lt;/td&gt;
+      &lt;td&gt;
+        &lt;!-- 個数選択用プルダウン表示部 START --&gt;
+        &lt;select name="item_count[{$item_id}]"&gt;
+          {html_options options=$ITEMS_OPTIONS.$item_id selected=$item_count.$item_id}
+        &lt;/select&gt;
+        &lt;!-- 個数選択用プルダウン表示部 END --&gt;
+      &lt;/td&gt;
+      &lt;td&gt;{$value.note}&nbsp;&lt;/td&gt;
+    &lt;/tr&gt;
+  {foreachelse}
+  {/foreach}
+  &lt;!-- 商品データ表示部 END --&gt;
+    &lt;tr&gt;
+      &lt;td colspan="5" style="text-align:center;"&gt;
+        &lt;input type="submit" value="見積書を作成する" /&gt;
+      &lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;/table&gt;
+    &lt;!-- データ送信を確認する為にパラメータを設定 --&gt;
+    &lt;input type="hidden" value="1" name="next"&gt;
+    &lt;/form&gt;
+  &lt;!-- 入力フォーム表示部 END --&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+</pre>
+					<h4>▼見積書用のHTML作成「<span class="blue">document.html</span>」</h4>
+<pre class="code prettyprint" >
+&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"&gt;
+&lt;html&gt;
+&lt;head&gt; 
+&lt;meta http-equiv="Content-Type" content="text/html; charset=utf-8"&gt;
+&lt;title&gt;オンライン見積書&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;center&gt;
+  &lt;table id="outside" width="630"&gt;
+    &lt;tr id="header"&gt;
+      &lt;td&gt;
+        &lt;table width="100%" id="header_1" border="0"&gt;
+          &lt;tr&gt;
+            &lt;td colspan="2" align="right"&gt;
+              &lt;font size="2"&gt;&lt;u&gt;発行日 {$smarty.now|date_format:"%Y年%m月%d日"}&lt;!-- 現在の日付が表示されます --&gt;&lt;/u&gt;&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td rowspan="2" width="370"&gt;
+              &lt;font size="6"&gt;&lt;b&gt;&lt;u&gt;御 見 積 書&lt;/u&gt;&lt;/b&gt;&lt;/font&gt;
+            &lt;/td&gt;
+            &lt;td&gt;
+              &lt;font size="4"&gt;&lt;b&gt;&lt;u&gt;株式会社　○○○○&lt;/u&gt;&lt;/b&gt;&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td&gt;
+              &lt;font size="2"&gt;東京都○○区○○町○－○－○&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td rowspan="2"&gt;
+              &nbsp;
+            &lt;/td&gt;
+            &lt;td&gt;
+              &lt;font size="2"&gt;○○ビル　○階&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td&gt;
+              &lt;font size="2"&gt;ＴＥＬ：○○（○○○○）－○○○○&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td rowspan="2"&gt;
+              &lt;font size="5"&gt;&lt;b&gt;{$company}　御中&lt;/b&gt;&lt;!-- 入力された会社名が表示されます --&gt;&lt;/font&gt;
+            &lt;/td&gt;
+            &lt;td&gt;
+              &lt;font size="2"&gt;ＦＡＸ：○○（○○○○）－○○○○&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td&gt;
+              &lt;font size="2"&gt;担当：○○　○○○&lt;/font&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+        &lt;/table&gt;&lt;!-- header_1 END --&gt;
+        &lt;br /&gt;
+        &lt;table id="header_2" width="100%" border="0" cellspacing="0" style="border-collapse: collapse;"&gt;
+          &lt;tr&gt;
+            &lt;td rowspan="2"&gt;
+              &lt;font size="2"&gt;平素よりご高配賜り、誠に有難うございます。&lt;br /&gt;
+              下記の通り御見積申し上げます。&lt;/font&gt;
+            &lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="center" valign="center"&gt;
+              部長
+            &lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="center" valign="center"&gt;
+              担当
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td style="border:solid 1px #000000;" width="60" rowspan="3" align="center" valign="center"&gt;
+              印&lt;!-- 印の画像等を表示する等設定が可能です --&gt;
+            &lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" width="60" rowspan="3" align="center" valign="center"&gt;
+              印&lt;!-- 印の画像等を表示する等設定が可能です --&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td height="30"&gt;
+              &lt;u&gt;見積総額（税込み）　{$ALL_TAX|number_format}円&lt;/u&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td height="30"&gt;
+              &lt;u&gt;見積有効期限　30日&lt;/u&gt;
+            &lt;/td&gt;
+          &lt;/tr&gt;
+        &lt;/table&gt;&lt;!-- header_2 END --&gt;
+        &lt;br /&gt;
+      &lt;/td&gt;
+    &lt;/tr&gt;&lt;!-- header END --&gt;
+    &lt;tr id="main"&gt;
+      &lt;td&gt;
+        &lt;table width="100%"  cellspacing="0" style="border-collapse: collapse;" id="main_1"&gt;
+          &lt;tr&gt;
+            &lt;th style="border:solid 1px #000000;" bgcolor="#CCCCFF"&gt;品名&lt;/th&gt;
+            &lt;th style="border:solid 1px #000000;" bgcolor="#CCCCFF"&gt;数量&lt;/th&gt;
+            &lt;th style="border:solid 1px #000000;" bgcolor="#CCCCFF"&gt;単価&lt;/th&gt;
+            &lt;th style="border:solid 1px #000000;" bgcolor="#CCCCFF"&gt;金額&lt;/th&gt;
+            &lt;th style="border:solid 1px #000000;" bgcolor="#CCCCFF"&gt;備考&lt;/th&gt;
+          &lt;/tr&gt;
+        &lt;!-- 注文データ表示部 START --&gt;
+        {foreach from=$ORDER_ITEMS key=item_id item=value}
+          &lt;tr&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;{$value.name}&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;{$value.count|number_format}{$value.unit}&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="right"&gt;{$value.price|number_format}円&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="right"&gt;{$value.total|number_format}円&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;{$value.note}&nbsp;&lt;/td&gt;
+          &lt;/tr&gt;
+        {foreachelse}
+        {/foreach}
+        &lt;!-- 注文データ表示部 END --&gt;
+          &lt;tr&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="center"&gt;&nbsp;小　　計&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="right"&gt;{$ALL|number_format}円&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;&lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="center"&gt;&nbsp;消　費　税&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="right"&gt;{$TAX|number_format}円&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;&lt;/td&gt;
+          &lt;/tr&gt;
+          &lt;tr&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td&gt;&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="center"&gt;&nbsp;合　　計&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;" align="right"&gt;　　{$ALL_TAX|number_format}円&nbsp;&lt;/td&gt;
+            &lt;td style="border:solid 1px #000000;"&gt;&nbsp;&lt;/td&gt;
+          &lt;/tr&gt;
+        &lt;/table&gt;&lt;!-- main_1 END --&gt;
+      &lt;/td&gt;
+    &lt;/tr&gt;&lt;!-- main END --&gt;
+    &lt;tr id="footer"&gt;
+      &lt;td align="left"&gt;
+        &lt;br /&gt;
+        &lt;font size="2"&gt;※備考　○○○○○○○○○○○○○○○○○○○○○○○○○○&lt;/font&gt;
+      &lt;/td&gt;
+    &lt;/tr&gt;&lt;!-- footer END --&gt;
+  &lt;/table&gt;&lt;!-- outside END --&gt;
+
+&lt;/center&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+
+</pre>
+<p>右上（HTML表示時）の<span class="red2">○○</span>で<u>表記されている部分</u>に御社の情報を入力してください</p>
+</div>
+			<br />
+			<div class="step" id="step03">
+				<h3>STEP:03 カスタマイズ</h3>
+					<br />
+					<h4>▼商品データの追加</h4>
+<p>下記のように配列を追加する事により商品の追加が簡単に行なえます</p>
+<pre class="code prettyprint" >
+    $items = array(
+          //  商品ごとに下記のような配列を作成します
+            array(
+                "name" =&gt; "○○サーバー",  //  商品名
+                "price" =&gt; 247000,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 10,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "台",  //  商品の単位
+                "note" =&gt; "RAID対応、2Uサーバ",  //  備考
+            ),
+          //  2つ目の商品
+            array(
+                "name" =&gt; "増設用メモリ4G",  //  商品名
+                "price" =&gt; 20000,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 10,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "個",  //  商品の単位
+                "note" =&gt; "○○サーバー専用",  //  備考
+            ),
+          //  3つ目の商品
+            array(
+                "name" =&gt; "17インチ・ディスプレイ",  //  商品名
+                "price" =&gt; 10800,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 30,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "台",  //  商品の単位
+                "note" =&gt; "",  //  備考
+            ),
+          //  4つ目の商品
+            array(
+                "name" =&gt; "キーボード",  //  商品名
+                "price" =&gt; 1980,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 50,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "個",  //  商品の単位
+                "note" =&gt; "マウスは付属していません",  //  備考
+            ),
+  //        配列データを増やすことにより商品を追加可能です
+            array(
+                "name" =&gt; "追加商品",  //  商品名
+                "price" =&gt; 1000,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 10,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "個",  //  商品の単位
+                "note" =&gt; "サンプルが付属",  //  備考
+            ),
+  //        配列データを増やすことにより商品を追加可能です
+            array(
+                "name" =&gt; "追加商品",  //  商品名
+                "price" =&gt; 1000,  //  単価(税抜) 1以上の半角数字で指定する必要があります
+                "max" =&gt; 10,  //  注文可能最大数 1以上の半角数字で指定する必要があります
+                "unit" =&gt; "個",  //  商品の単位
+                "note" =&gt; "サンプルが付属",  //  備考
+            ),
+        );
+</pre>
+			</div>
+		</div><!-- main ここまで -->
+	</div><!-- inner ここまで -->
+	<br />
+<p style="text-align:right">当マニュアルに記載されているすべての社名および製品名はそれぞれの企業の商標もしくは登録商標です。</p>
+<p style="text-align:right">Copyright(C) 2000,2009 E-CLASSIS Inc. All Rights Reserved.</p>
+</div><!-- contents ここまで -->
+</body>
+</html>
